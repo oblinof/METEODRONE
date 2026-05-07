@@ -14,40 +14,41 @@ export interface WeatherData {
 }
 
 const DAY_SCALES = [
-  ["C", "D", "E", "F", "G", "A", "B"], // Major
-  ["C", "D", "E", "F#", "G", "A", "B"], // Lydian
-  ["C", "D", "E", "F", "G", "A", "Bb"], // Mixolydian
-  ["C", "D", "E", "G", "A"], // Major Pentatonic
-  ["C", "D", "E", "F#", "G", "A", "Bb"], // Lydian Dominant
-  ["C", "D", "E", "F#", "G", "A", "Bb"], // Acoustic (Lydian Dominant)
-  ["C", "D", "Eb", "E", "G", "A"], // Major Blues
-  ["C", "Db", "E", "F#", "G#", "A#", "B"], // Enigmatic (weird but bright)
-  ["C", "D", "E", "F", "G", "Ab", "B"], // Harmonic Major
-  ["C", "D", "E", "F#", "A", "Bb"] // Prometheus
+  ["C", "D", "E", "G", "A"], // C Major Pentatonic
+  ["G", "A", "B", "D", "E"], // G Major Pentatonic
+  ["F", "G", "A", "C", "D"], // F Major Pentatonic
+  ["D", "E", "F#", "A", "B"], // D Major Pentatonic
+  ["A", "B", "C#", "E", "F#"], // A Major Pentatonic
+  ["C", "D", "E", "F#", "G#", "Bb"], // Whole Tone (Debussy)
+  ["C", "E", "F#", "G", "B"], // Lydian Pentatonic
+  ["C", "D", "F", "G", "A"], // Sus4 Pentatonic
+  ["E", "F#", "G#", "B", "C#"], // E Major Pentatonic
+  ["Bb", "C", "D", "F", "G"] // Bb Major Pentatonic
 ];
 
 const NIGHT_SCALES = [
-  ["C", "D", "Eb", "F", "G", "Ab", "Bb"], // Natural Minor (Aeolian)
-  ["C", "D", "Eb", "F", "G", "A", "Bb"], // Dorian
-  ["C", "Db", "Eb", "F", "G", "Ab", "Bb"], // Phrygian
-  ["C", "Db", "Eb", "F", "Gb", "Ab", "Bb"], // Locrian
-  ["C", "Eb", "F", "G", "Bb"], // Minor Pentatonic
-  ["C", "D", "Eb", "F", "G", "Ab", "B"], // Harmonic Minor
-  ["C", "D", "Eb", "F", "G", "A", "B"], // Melodic Minor
-  ["C", "D", "Eb", "F#", "G", "Ab", "B"], // Hungarian Minor
-  ["C", "Db", "E", "F", "G", "Ab", "Bb"], // Phrygian Dominant
-  ["C", "D", "Eb", "G", "Ab"] // Hirajoshi
+  ["C", "Eb", "F", "G", "Bb"], // C Minor Pentatonic
+  ["A", "C", "D", "E", "G"], // A Minor Pentatonic
+  ["E", "G", "A", "B", "D"], // E Minor Pentatonic
+  ["D", "F", "G", "A", "C"], // D Minor Pentatonic
+  ["G", "Bb", "C", "D", "F"], // G Minor Pentatonic
+  ["C", "D", "Eb", "G", "Ab"], // Hirajoshi (C)
+  ["A", "B", "C", "E", "F"], // Hirajoshi (A)
+  ["C", "Db", "F", "G", "Ab"], // Insen (C)
+  ["C", "Eb", "F", "Gb", "Bb"], // Minor Blues Pentatonic
+  ["B", "D", "E", "F#", "A"] // B Minor Pentatonic
 ];
 
-const OSC_TYPES = ["sine", "triangle", "square", "sawtooth", "sine4", "triangle4"];
+const CARRIER_TYPES = ["sine", "triangle", "sine4", "triangle4", "sine8"];
+const MOD_TYPES = ["sine", "triangle"];
 
 export class MeteoDrone {
-  private synth: Tone.PolySynth<Tone.FMSynth>;
+  private droneSynth: Tone.PolySynth<Tone.FMSynth>;
+  private arpSynth: Tone.PolySynth<Tone.FMSynth>;
   private filter: Tone.Filter;
   private reverb: Tone.Reverb;
   private delay: Tone.PingPongDelay;
   private delayPanLfo: Tone.LFO;
-  private delayTimeLfo: Tone.LFO;
   private chorus: Tone.Chorus;
   private stereoWidener: Tone.StereoWidener;
   private filterLfo: Tone.LFO;
@@ -58,43 +59,58 @@ export class MeteoDrone {
   public isPlaying = false;
   
   constructor() {
-    this.synth = new Tone.PolySynth(Tone.FMSynth, {
-      maxPolyphony: 8,
+    const synthOptions = {
+        harmonicity: 1.0, // Strict simple ratio
+        modulationIndex: 1.5, // Max 4.0
+        oscillator: { type: "sine" as Tone.ToneOscillatorType }, // Carrier
+        modulation: { type: "sine" as Tone.ToneOscillatorType }, // Modulator restricted to sine for warmth
+        envelope: { attack: 6, decay: 4, sustain: 0.9, release: 8 }, // Min attack well above 5ms
+        modulationEnvelope: { attack: 6, decay: 4, sustain: 0.9, release: 8 }
+    };
+
+    this.droneSynth = new Tone.PolySynth(Tone.FMSynth, {
+      maxPolyphony: 6,
+      options: synthOptions
+    });
+
+    this.arpSynth = new Tone.PolySynth(Tone.FMSynth, {
+      maxPolyphony: 4,
       options: {
-        harmonicity: 1.5,
-        modulationIndex: 10,
-        oscillator: { type: "sine" },
-        modulation: { type: "triangle" },
-        envelope: { attack: 4, decay: 3, sustain: 0.9, release: 6 },
-        modulationEnvelope: { attack: 4, decay: 3, sustain: 0.9, release: 6 }
+        ...synthOptions,
+        envelope: { attack: 1.5, decay: 3, sustain: 0.6, release: 4 }, // Soft attack to avoid clicks
+        modulationEnvelope: { attack: 1.5, decay: 3, sustain: 0.6, release: 4 }
       }
     });
     
-    this.filter = new Tone.Filter(2000, "lowpass", -24);
-    this.chorus = new Tone.Chorus(4, 3, 0.6).start();
-    this.delay = new Tone.PingPongDelay("8n", 0.3);
+    // Lush 24dB lowpass dynamic filter
+    this.filter = new Tone.Filter(3000, "lowpass", -24);
     
-    // Add subtle panning variations and time modulation to delay for generative feel
-    this.delayPanLfo = new Tone.LFO(0.1, -0.5, 0.5).start();
-    // In PingPongDelay, pan acts as a pre-pan to the delay lines
-    // ToneJS PingPong doesn't expose pan directly, so we modulate delay times slightly instead
-    this.delayTimeLfo = new Tone.LFO(0.05, 0.98, 1.02).start();
-    // Multiply the base delay time by this LFO (faux tape modulation)
-    const delayTimeMult = new Tone.Multiply();
-    this.delayTimeLfo.connect(delayTimeMult.factor);
+    // Fixed "Clean" Low Pass Filter at 12kHz to remove harsh digital FM artifacts
+    const antiAliasingFilter = new Tone.Filter(12000, "lowpass", -24);
+
+    // Warm short chorus for analog thickness (depth lowered drastically to avoid vibrato/siren effect)
+    this.chorus = new Tone.Chorus(0.5, 2.5, 0.05).start();
     
-    // Tone.Reverb's generation is async, so we'll init it.
-    this.reverb = new Tone.Reverb({ decay: 6, preDelay: 0.1 });
+    // High feedback ping-pong delay for Debussy-like washes
+    this.delay = new Tone.PingPongDelay("4n.", 0.6);
+    
+    // Smooth, slow stereo panning for the delay
+    this.delayPanLfo = new Tone.LFO(0.1, -0.6, 0.6).start();
+    
+    // Huge, lush ambient reverb
+    this.reverb = new Tone.Reverb({ decay: 10, preDelay: 0.1 });
     
     this.stereoWidener = new Tone.StereoWidener(0.9);
     
-    // Slow evolving filter
-    this.filterLfo = new Tone.LFO({ frequency: 0.1, min: 200, max: 1500, type: "sine" }).start();
+    // Very slow evolving filter sweep
+    this.filterLfo = new Tone.LFO({ frequency: 0.1, min: 400, max: 2500, type: "sine" }).start();
     this.filterLfo.connect(this.filter.frequency);
     
-    // Routing -> synth -> filter -> chorus -> delay -> reverb -> widener -> Master
-    this.synth.chain(
-      this.filter, 
+    // Routing -> synth -> anti-alias filter -> dynamic filter -> chorus -> delay -> reverb -> widener -> Master
+    this.droneSynth.chain(antiAliasingFilter, this.filter);
+    this.arpSynth.chain(antiAliasingFilter, this.filter);
+    
+    this.filter.chain(
       this.chorus, 
       this.delay, 
       this.reverb, 
@@ -112,9 +128,10 @@ export class MeteoDrone {
   async stop() {
     // Release the drones
     if (this.currentDrone.length > 0) {
-      this.synth.triggerRelease(this.currentDrone, Tone.now());
+      this.droneSynth.releaseAll(Tone.now());
       this.currentDrone = [];
     }
+    this.arpSynth.releaseAll(Tone.now());
     
     if (this.arpSequence) {
       this.arpSequence.stop();
@@ -137,7 +154,12 @@ export class MeteoDrone {
   }
 
   private hashData(data: WeatherData): number {
-    return Math.abs(Math.floor(data.temperature * 13 + data.humidity * 7 + data.pressure + data.windDirection));
+    const a = data.temperature * 137.5;
+    const b = data.humidity * 83.1;
+    const c = data.pressure * 13.9;
+    const d = data.windDirection * 31.3;
+    const e = data.weatherCode * 113.7;
+    return Math.abs(Math.floor(a + b + c + d + e));
   }
 
   async updateParametersAndPlay(data: WeatherData) {
@@ -148,112 +170,175 @@ export class MeteoDrone {
     const hash = this.hashData(data);
     
     // 1. Temperature -> Base Octave & Note Range
-    const baseOctave = Math.floor(Math.round(this.mapRange(data.temperature, -10, 40, 2, 5)));
+    // Center it softly lower for pleasant pads. Octaves 2-4
+    const baseOctave = Math.floor(Math.round(this.mapRange(data.temperature, -10, 40, 2, 4)));
     
-    // 9. isDay -> Scale Type (Pick from 10 day scales or 10 night scales)
-    const scaleIndex = hash % 10;
+    // 9. isDay -> Scale Type
+    const scaleIndex = hash % (data.isDay === 1 ? DAY_SCALES.length : NIGHT_SCALES.length);
     const baseScale = data.isDay === 1 ? DAY_SCALES[scaleIndex] : NIGHT_SCALES[scaleIndex];
     
-    // Depending on pentatonic (5 notes) or heptatonic (7 notes)
+    // Smooth Drone building blocks (triad + octaves)
     const activeNotes = [];
     activeNotes.push(`${baseScale[0]}${baseOctave}`);
     if (baseScale.length >= 3) activeNotes.push(`${baseScale[2]}${baseOctave}`);
     if (baseScale.length >= 5) activeNotes.push(`${baseScale[4]}${baseOctave}`);
-    else activeNotes.push(`${baseScale[1]}${baseOctave+1}`); // fallback
-    
-    activeNotes.push(`${baseScale[1]}${baseOctave + 1}`);
-    if (baseScale.length >= 6) activeNotes.push(`${baseScale[5]}${baseOctave + 1}`);
-    activeNotes.push(`${baseScale[0]}${baseOctave + 2}`);
+    else activeNotes.push(`${baseScale[1]}${baseOctave+1}`);
+    activeNotes.push(`${baseScale[0]}${baseOctave + 1}`);
 
-    // Timbral Variety based on weather condition (hash & wind speed)
-    const oscType = OSC_TYPES[hash % OSC_TYPES.length] as Tone.ToneOscillatorType;
-    const modType = OSC_TYPES[(hash + 3) % OSC_TYPES.length] as Tone.ToneOscillatorType;
+    // Timbral Variety: Radically change oscillator and envelope per city
+    const carrierType = CARRIER_TYPES[hash % CARRIER_TYPES.length];
+    const modType = MOD_TYPES[(hash + 3) % MOD_TYPES.length];
     
-    // Slower attack for calmer weather, faster for stormy
-    const envAttack = this.mapRange(data.windSpeed, 0, 100, 5, 0.5);
-    const envRelease = this.mapRange(data.windSpeed, 0, 100, 8, 2);
+    // Determine "Instrument Style" based on city to ensure massive timbre variance and avoid constant "violin"
+    const instrStyle = hash % 3; // 0 = Pad, 1 = EPiano/Keys, 2 = Mallet/Pluck
     
-    this.synth.set({
-       oscillator: { type: oscType },
-       modulation: { type: modType },
-       envelope: { attack: envAttack, release: envRelease, decay: 4, sustain: 0.8 },
-       modulationEnvelope: { attack: envAttack * 1.5, release: envRelease, decay: 4, sustain: 0.8 }
+    let envAttack, envDecay, envSustain, envRelease;
+    let arpEnvAttack, arpEnvDecay, arpEnvSustain, arpEnvRelease;
+
+    if (instrStyle === 0) {
+      // Warm Pad 
+      envAttack = this.mapRange(data.windSpeed, 0, 100, 2.0, 0.5);
+      envDecay = 4.0;
+      envSustain = 0.8;
+      envRelease = 5.0;
+      
+      arpEnvAttack = 1.0;
+      arpEnvDecay = 2.0;
+      arpEnvSustain = 0.5;
+      arpEnvRelease = 3.0;
+    } else if (instrStyle === 1) {
+      // Electric Piano / Rhodes Style (No slow swell = no violin)
+      envAttack = 0.05;
+      envDecay = 2.0;
+      envSustain = 0.4;
+      envRelease = 3.0;
+      
+      arpEnvAttack = 0.02;
+      arpEnvDecay = 1.0;
+      arpEnvSustain = 0.2;
+      arpEnvRelease = 2.0;
+    } else {
+      // Mallet / Harp Style (Plucky, completely opposite of violin)
+      envAttack = 0.005;
+      envDecay = 1.5;
+      envSustain = 0.1;
+      envRelease = 4.0;
+      
+      arpEnvAttack = 0.005;
+      arpEnvDecay = 0.5;
+      arpEnvSustain = 0.0;
+      arpEnvRelease = 1.5;
+    }
+    
+    this.droneSynth.set({
+       oscillator: { type: carrierType as Tone.ToneOscillatorType },
+       modulation: { type: modType as Tone.ToneOscillatorType },
+       envelope: { attack: envAttack, release: envRelease, decay: envDecay, sustain: envSustain },
+       modulationEnvelope: { attack: envAttack * 1.2, release: envRelease, decay: envDecay, sustain: envSustain }
+    });
+    this.arpSynth.set({
+       oscillator: { type: carrierType as Tone.ToneOscillatorType },
+       modulation: { type: modType as Tone.ToneOscillatorType },
+       envelope: { attack: arpEnvAttack, decay: arpEnvDecay, sustain: arpEnvSustain, release: arpEnvRelease },
+       modulationEnvelope: { attack: arpEnvAttack * 1.2, decay: arpEnvDecay, sustain: arpEnvSustain, release: arpEnvRelease }
     });
 
     // 2. Humidity -> Reverb
-    const reverbDecay = this.mapRange(data.humidity, 0, 100, 3, 15);
+    const reverbDecay = this.mapRange(data.humidity, 0, 100, 5, 20); // Slightly shorter max decay to prevent muddy wash
     this.reverb.decay = reverbDecay;
-    this.reverb.wet.value = this.mapRange(data.humidity, 0, 100, 0.3, 0.9);
+    this.reverb.wet.value = this.mapRange(data.humidity, 0, 100, 0.4, 0.90);
 
     // 3. Wind Speed -> Arp Speed & movement
-    const arpSpeeds = ["1n", "2n", "4n", "4n.", "8n", "8t", "16n"];
-    const speedIndex = Math.floor(this.mapRange(data.windSpeed, 0, 80, 0, 6));
+    // Much slower generative melody
+    const arpSpeeds = ["2n", "2n.", "4n", "4n.", "8n", "8n."];
+    const speedIndex = Math.floor(this.mapRange(data.windSpeed, 0, 80, 0, 5));
     const arpRate = arpSpeeds[speedIndex];
-    this.filterLfo.frequency.rampTo(this.mapRange(data.windSpeed, 0, 80, 0.02, 3), 1);
     
-    // Vary delay time based on wind as well for subtle changes
-    this.delayTimeLfo.frequency.value = this.mapRange(data.windSpeed, 0, 80, 0.01, 0.5);
+    // LFO is extremely slow for slow breathing pads
+    this.filterLfo.frequency.rampTo(this.mapRange(data.windSpeed, 0, 80, 0.02, 1.0), 1);
 
     // 4. Apparent Temperature -> FM Mod Amount
-    const modIndex = this.mapRange(data.apparentTemperature, -10, 40, 0.5, 25);
-    this.synth.set({ modulationIndex: modIndex });
-
-    // 5. Atmospheric Pressure -> Base Cutoff
-    const filterMaxLimit = this.mapRange(data.pressure, 950, 1050, 600, 6000);
+    // Very gentle modulation for ambient harmonics. strictly max 3.0 to prevent any metal/bell
+    const modIndex = this.mapRange(data.apparentTemperature, -10, 40, 0.1, 3.0);
+    
+    // 5. Atmospheric Pressure -> Base Cutoff -> More varied based on hash
+    const filterBase = (hash % 1000) + 400; // 400 to 1400 Min
+    const filterMaxLimit = filterBase + this.mapRange(data.pressure, 950, 1050, 800, 3000);
     this.filterLfo.max = filterMaxLimit;
-    this.filterLfo.min = filterMaxLimit * 0.1;
+    this.filterLfo.min = filterBase;
 
     // 6. Wind Direction -> Detune & Pan
-    const detuneCents = this.mapRange(data.windDirection, 0, 360, -40, 40);
-    this.synth.set({ detune: detuneCents });
-    this.stereoWidener.width.value = this.mapRange(Math.abs(180 - data.windDirection), 0, 180, 0.3, 1);
+    // Gentle detune, perfectly safe
+    const detuneCents = this.mapRange(data.windDirection, 0, 360, -8, 8);
+    this.droneSynth.set({ detune: detuneCents });
+    this.arpSynth.set({ detune: detuneCents * 1.5 });
+    
+    // Wide but not dizzying
+    this.stereoWidener.width.value = this.mapRange(Math.abs(180 - data.windDirection), 0, 180, 0.5, 1.0);
 
     // 7. Weather Code -> FM Ratios
-    let harmonicity = 1.5;
-    if (data.weatherCode === 0) harmonicity = 1.0; // Pure
-    else if (data.weatherCode < 4) harmonicity = 1.5; // Perfect 5th
-    else if (data.weatherCode < 50) harmonicity = 2.01; // Slightly detuned octave
-    else if (data.weatherCode < 70) harmonicity = 2.5; // rain (gritty)
-    else if (data.weatherCode < 80) harmonicity = 3.14; // snow -> bell (inharmonic)
-    else harmonicity = Math.random() * 5; // chaos
-    this.synth.set({ harmonicity: harmonicity });
+    // STRICT PURE HARMONIC MULTIPLIERS ONLY
+    const harmonicities = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0];
+    let harmonicity = harmonicities[hash % harmonicities.length];
+    
+    if (data.weatherCode > 50) { 
+       harmonicity = 2.0; // Rain/bad weather = simple octaves
+    }
+    
+    // Velocity scaling effect via modulation index control
+    this.droneSynth.set({ modulationIndex: modIndex * 0.5, harmonicity }); 
+    // Arp modulates slightly more
+    this.arpSynth.set({ modulationIndex: modIndex * 0.9, harmonicity });
 
     // 8. Cloud Cover -> Delay
-    this.delay.feedback.rampTo(this.mapRange(data.cloudCover, 0, 100, 0.2, 0.85), 0.5);
-    this.delay.wet.rampTo(this.mapRange(data.cloudCover, 0, 100, 0.1, 0.7), 0.5);
+    // High feedback for Debussy-like cascades
+    this.delay.feedback.rampTo(this.mapRange(data.cloudCover, 0, 100, 0.4, 0.85), 0.5);
+    this.delay.wet.rampTo(this.mapRange(data.cloudCover, 0, 100, 0.3, 0.7), 0.5);
+    
+    // Vary delay time by city hash
+    const delayTimes = ["2n", "4n.", "4n", "8n.", "8n", "8t", "16n"];
+    this.delay.delayTime.value = delayTimes[hash % delayTimes.length];
 
     // 10. Dewpoint -> Resonance / Filter Q
-    this.filter.Q.value = this.mapRange(data.dewPoint, -10, 30, 0.1, 8);
+    // Gentle resonance
+    this.filter.Q.value = this.mapRange(data.dewPoint, -10, 30, 0.2, 4);
     
-    // Play sound!
-    const droneVolume = -15; // dB
-    this.synth.volume.value = droneVolume;
+    // Play sound! Volume increased from -18 to -8
+    const droneVolume = instrStyle === 0 ? -12 : -8; // Pads need to be quieter than plucks/keys
+    this.droneSynth.volume.value = droneVolume;
+    this.arpSynth.volume.value = droneVolume;
     
-    // Background pad chord
-    this.currentDrone = activeNotes.slice(0, 3);
+    // Background pad chord: perfectly consonant Root, Fifth (+7 semitones), and Octave (+12 semitones)
+    const rootNote = activeNotes[0];
+    const fifthNote = Tone.Frequency(rootNote).transpose(7).toNote();
+    const octaveNote = Tone.Frequency(rootNote).transpose(12).toNote();
+    
+    this.currentDrone = [rootNote, fifthNote, octaveNote];
     const now = Tone.now();
-    this.synth.triggerAttack(this.currentDrone, now, 0.3);
+    this.droneSynth.triggerAttack(this.currentDrone, now, instrStyle === 0 ? 0.3 : 0.6); 
     
     // Evolving drone loop
     this.droneLoop = new Tone.Loop((time) => {
-      // Pick random notes from the base 2 octaves
-      const lowerNotes = [];
-      for (let oct = baseOctave; oct <= baseOctave + 1; oct++) {
-        baseScale.forEach(n => lowerNotes.push(`${n}${oct}`));
-      }
+      // Modulate delay pan
+      this.delayPanLfo.frequency.rampTo(0.05 + Math.random() * 0.1, 8);
       
-      const shuffled = lowerNotes.sort(() => 0.5 - Math.random());
-      const newDrone = shuffled.slice(0, 3);
+      // Select a new root from the scale occasionally, or keep the same root and vary the inversions
+      const randomScaleIndex = Math.floor(Math.random() * 3); // Pick from first 3 notes of scale to act as root
+      const newRoot = activeNotes[randomScaleIndex];
+      const newFifth = Tone.Frequency(newRoot).transpose(7).toNote();
+      const newOctave = Tone.Frequency(newRoot).transpose(12).toNote();
       
-      // Slight glide / crossfade effect
-      this.synth.triggerRelease(this.currentDrone, time);
+      const newDrone = [newRoot, newFifth, newOctave];
+      
+      // Smooth crossfade/retrigger
+      this.droneSynth.triggerRelease(this.currentDrone, time + (instrStyle === 0 ? 2 : 0.1));
       this.currentDrone = newDrone;
-      this.synth.triggerAttack(this.currentDrone, time + 0.5, 0.2 + Math.random() * 0.1);
-    }, "2m"); // Change drone every 2 measures
+      this.droneSynth.triggerAttack(this.currentDrone, time, (instrStyle === 0 ? 0.2 : 0.5) + (Math.random() * 0.15));
+    }, "2m"); // Modulate chords every 2 measures
     
     this.droneLoop.start(0);
     
-    // Generative Arpeggiation Note Pool
+    // Generative Soft Melody Note Pool (Debussy cascading arps)
     const allScaleNotes: string[] = [];
     for (let oct = baseOctave + 1; oct <= baseOctave + 3; oct++) {
       baseScale.forEach(n => allScaleNotes.push(`${n}${oct}`));
@@ -262,23 +347,21 @@ export class MeteoDrone {
     let currentNoteIndex = Math.floor(allScaleNotes.length / 2);
     
     this.arpSequence = new Tone.Loop((time) => {
-      // Random walk index
-      const step = Math.floor(Math.random() * 5) - 2; // -2 to +2
+      // Step up or down by 3rds or 4ths for more melodic intervals
+      const step = (Math.floor(Math.random() * 5) - 2) * 2; 
       currentNoteIndex += step;
       
-      // Bounce off boundaries
       if (currentNoteIndex < 0) currentNoteIndex = 1;
       if (currentNoteIndex >= allScaleNotes.length) currentNoteIndex = allScaleNotes.length - 2;
       
       const note = allScaleNotes[currentNoteIndex];
-      const vel = 0.05 + Math.random() * 0.15;
+      const vel = 0.2 + Math.random() * 0.3; // Louder velocities for arps
       
-      // Sparsity and dynamics
-      if (Math.random() > 0.2) {
-        const dur = Math.random() > 0.8 ? "2n" : "4n";
-        // Humanize timing
-        const tOffset = (Math.random() - 0.5) * 0.05;
-        this.synth.triggerAttackRelease(note, dur, time + tOffset, vel);
+      // Sparsity
+      if (Math.random() > 0.3) {
+        const dur = Math.random() > 0.5 ? "4n" : "8n";
+        const tOffset = (Math.random() - 0.5) * 0.1;
+        this.arpSynth.triggerAttackRelease(note, dur, time + tOffset, vel);
       }
     }, arpRate);
     
