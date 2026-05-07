@@ -7,6 +7,7 @@ const WEATHER_API = "https://api.open-meteo.com/v1/forecast";
 
 export default function App() {
   const [city, setCity] = useState("Santa Fe, Argentina");
+  const [activeCity, setActiveCity] = useState("Santa Fe, Argentina");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
@@ -42,7 +43,9 @@ export default function App() {
       }
       
       const { latitude, longitude, name, country } = geoData.results[0];
-      setCity(`${name}, ${country}`.toUpperCase());
+      const resolvedCity = `${name}, ${country}`.toUpperCase();
+      setCity(resolvedCity);
+      setActiveCity(resolvedCity);
       
       const weatherUrl = `${WEATHER_API}?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,apparent_temperature,surface_pressure,weather_code,cloud_cover,is_day,dew_point_2m&timezone=auto`;
       const weatherRes = await fetch(weatherUrl);
@@ -94,31 +97,44 @@ export default function App() {
     if (error) return `/// SYSTEM ALERT: ${error} /// PLEASE ENTER ANOTHER LOCATION ///`;
     if (!weather || !isPlaying) return "/// ENTER LOCATION AND PRESS PLAY TO COMMENCE SYNTHESIS /// SOUND SCAPE GENERATOR ACTIVE ///";
     
-    return `/// NOW SYNTHESIZING: ${city} /// ${weather.isDay ? 'DAYTIME' : 'NIGHTTIME'} PROCEDURE /// TEMP: ${weather.temperature}°C /// HUMIDITY: ${weather.humidity}% /// WIND: ${weather.windSpeed} KM/H /// FM INDEX MAPPED TO TEMP /// FILTER CUTOFF MAPPED TO PRESSURE /// COMMENCING GENERATIVE CASCADE ///`;
+    return `/// NOW SYNTHESIZING: ${activeCity} /// ${weather.isDay ? 'DAYTIME' : 'NIGHTTIME'} PROCEDURE /// TEMP: ${weather.temperature}°C /// HUMIDITY: ${weather.humidity}% /// WIND: ${weather.windSpeed} KM/H /// FM INDEX MAPPED TO TEMP /// FILTER CUTOFF MAPPED TO PRESSURE /// COMMENCING GENERATIVE CASCADE ///`;
   };
 
-  const getGradientPalette = (weather: WeatherData | null) => {
-    if (!weather) return 'linear-gradient(135deg, #181156 0%, #aa4c04 40%, #cc6a12 55%, #76222b 75%, #2a1b5c 100%)';
+  const getGradientPalette = (weather: WeatherData | null, currentCity: string, isPlaying: boolean) => {
+    if (!weather || !currentCity || !isPlaying) return 'linear-gradient(135deg, #181156 0%, #aa4c04 40%, #cc6a12 55%, #76222b 75%, #2a1b5c 100%)';
     
-    if (weather.isDay) {
-      if (weather.temperature > 25) {
-        return 'linear-gradient(135deg, #ff4b1f 0%, #ff9068 40%, #ff4b1f 55%, #c0392b 75%, #ff9068 100%)';
-      } else if (weather.temperature > 10) {
-        return 'linear-gradient(135deg, #181156 0%, #aa4c04 40%, #cc6a12 55%, #76222b 75%, #2a1b5c 100%)';
-      } else {
-        return 'linear-gradient(135deg, #3a7bd5 0%, #3a6073 40%, #4facfe 55%, #00f2fe 75%, #3a7bd5 100%)';
-      }
-    } else {
-      if (weather.temperature > 20) {
-        return 'linear-gradient(135deg, #23074d 0%, #cc5333 40%, #8e2de2 55%, #4a00e0 75%, #23074d 100%)';
-      } else {
-        return 'linear-gradient(135deg, #0f2027 0%, #203a43 40%, #2c5364 55%, #141e30 75%, #0f2027 100%)';
-      }
+    let hash = 0;
+    const lowerCity = currentCity.toLowerCase();
+    for (let i = 0; i < lowerCity.length; i++) {
+        hash = lowerCity.charCodeAt(i) + ((hash << 5) - hash);
     }
+    hash = Math.abs(hash);
+    
+    const t = weather.temperature;
+    
+    let baseHue = hash % 360;
+    let hueOffset1 = (hash % 60) + 20; 
+    let hueOffset2 = ((hash >> 2) % 90) + 30; 
+    let hueOffset3 = ((hash >> 4) % 120) + 60; 
+    
+    let sBase = weather.isDay ? 80 : 50;
+    let lBase = weather.isDay ? 55 : 20;
+    
+    let tempBonus = Math.max(-20, Math.min(20, t - 15)); 
+    sBase = Math.max(30, Math.min(100, sBase + tempBonus));
+    lBase = Math.max(10, Math.min(80, lBase + (tempBonus / 2)));
+    
+    const color1 = `hsl(${baseHue}, ${sBase}%, ${lBase}%)`;
+    const color2 = `hsl(${(baseHue + hueOffset1) % 360}, ${Math.min(100, sBase + 15)}%, ${Math.min(100, lBase + 10)}%)`;
+    const color3 = `hsl(${(baseHue + hueOffset2) % 360}, ${sBase}%, ${Math.max(0, lBase - 5)}%)`;
+    const color4 = `hsl(${(baseHue + hueOffset3) % 360}, ${Math.min(100, sBase + 10)}%, ${Math.max(0, Math.min(100, lBase + 15))}%)`;
+    const color5 = `hsl(${(baseHue + 180) % 360}, ${Math.max(0, sBase - 15)}%, ${Math.max(0, lBase - 10)}%)`;
+    
+    return `linear-gradient(135deg, ${color1} 0%, ${color2} 25%, ${color3} 50%, ${color4} 75%, ${color5} 100%)`;
   };
 
   return (
-    <div className="h-screen w-full flex flex-col font-sans overflow-hidden bg-[#272153] bg-pan-overlay transition-all duration-1000" style={{ backgroundImage: getGradientPalette(weather) }}>
+    <div className="h-screen w-full flex flex-col font-sans overflow-hidden bg-[#272153] bg-pan-overlay transition-all duration-1000" style={{ backgroundImage: getGradientPalette(weather, activeCity, isPlaying) }}>
       
       {/* Header */}
       <header className="h-[12%] min-h-[90px] bg-[#1e1c66] flex items-center justify-between px-2 sm:px-6 border-b-4 border-black relative z-20 shrink-0 shadow-2xl">
