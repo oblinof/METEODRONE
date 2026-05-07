@@ -1,0 +1,6 @@
+{
+  "name": "Meteodrone",
+  "description": "An evolving generative FM synthesizer driven by current weather data from Open-Meteo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

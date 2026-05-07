@@ -1,0 +1,44 @@
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Oswald", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer utilities {
+  .text-border {
+    text-shadow: 
+      -1.5px -1.5px 0 #000,  
+       1.5px -1.5px 0 #000,
+      -1.5px  1.5px 0 #000,
+       1.5px  1.5px 0 #000,
+       3px  3px 0 #000;
+  }
+  
+  .card-border {
+    box-shadow: 
+      inset 0 0 0 3px #a0a0b2,
+      0 0 0 3px #000;
+  }
+
+  .bg-pan-overlay {
+    background-size: 300% 300%;
+    animation: bg-pan 20s ease-in-out infinite;
+  }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(100vw); }
+  100% { transform: translateX(-100%); }
+}
+
+@keyframes bg-pan {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-marquee {
+  animation: marquee 15s linear infinite;
+  will-change: transform;
+}
